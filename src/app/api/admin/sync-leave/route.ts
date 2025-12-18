@@ -1,52 +1,27 @@
-import { NextResponse } from 'next/server'
-import membersConfig from '../../../../../config/members.json'
+import { NextRequest, NextResponse } from 'next/server'
 import { 
   getWeekMonday, 
   findWeeklyReportPage, 
   createWeeklyReportPage,
   updateMemberReport 
 } from '@/lib/notion'
-import fs from 'fs'
-import path from 'path'
-
-// 获取提交状态文件路径
-function getSubmissionsPath() {
-  return path.join(process.cwd(), 'data', 'submissions.json')
-}
-
-// 读取提交状态
-function readSubmissions() {
-  try {
-    const filePath = getSubmissionsPath()
-    if (!fs.existsSync(filePath)) {
-      return null
-    }
-    const data = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return null
-  }
-}
+import membersConfig from '../../../../../config/members.json'
 
 // 同步请假信息到 Notion
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const weekOf = getWeekMonday()
-    const submissions = readSubmissions()
+    const body = await request.json()
+    const { leaveMembers } = body as { leaveMembers: string[] }
     
-    // 获取当前周的请假列表
-    const currentLeaves = submissions?.weekOf === weekOf ? (submissions.leaves || {}) : {}
-    
-    // 获取请假的成员
-    const leaveMembers = membersConfig.members.filter((m: any) => currentLeaves[m.id])
-    
-    if (leaveMembers.length === 0) {
+    if (!leaveMembers || leaveMembers.length === 0) {
       return NextResponse.json({
         success: true,
         message: '没有需要同步的请假信息',
         updated: 0,
       })
     }
+
+    const weekOf = getWeekMonday()
 
     // 查找或创建周报页面
     let pageId = await findWeeklyReportPage(weekOf)
@@ -55,7 +30,7 @@ export async function POST() {
       // 创建新页面（传递成员信息包含请假状态）
       const memberInfos = membersConfig.members.map((m: any) => ({
         name: m.name,
-        onLeave: currentLeaves[m.id] || false,
+        onLeave: leaveMembers.includes(m.id),
       }))
       pageId = await createWeeklyReportPage(weekOf, memberInfos)
       
@@ -69,10 +44,13 @@ export async function POST() {
 
     // 更新每个请假成员的内容
     let updatedCount = 0
-    for (const member of leaveMembers) {
-      const success = await updateMemberReport(pageId, member.name, '（请假）')
-      if (success) {
-        updatedCount++
+    for (const memberId of leaveMembers) {
+      const member = membersConfig.members.find((m: any) => m.id === memberId)
+      if (member) {
+        const success = await updateMemberReport(pageId, member.name, '（请假）')
+        if (success) {
+          updatedCount++
+        }
       }
     }
 
@@ -89,6 +67,3 @@ export async function POST() {
     )
   }
 }
-
-
-

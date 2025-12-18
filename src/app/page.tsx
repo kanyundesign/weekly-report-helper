@@ -184,8 +184,13 @@ export default function Home() {
   const syncLeaveToNotion = async () => {
     setIsSyncingLeave(true)
     try {
+      // 获取请假成员的 ID 列表
+      const leaveMemberIds = members.filter(m => m.onLeave).map(m => m.id)
+      
       const res = await fetch('/api/admin/sync-leave', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leaveMembers: leaveMemberIds }),
       })
       const data = await res.json()
       
