@@ -1,50 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getWeekMonday } from '@/lib/notion'
-import fs from 'fs'
-import path from 'path'
 
-// 检测是否在 Vercel 环境
-const isVercel = process.env.VERCEL === '1'
-
-// 内存存储（用于 Vercel 环境）
-let memoryStorage: Record<string, any> = {}
-
-// 获取提交状态文件路径
-function getSubmissionsPath() {
-  return path.join(process.cwd(), 'data', 'submissions.json')
-}
-
-// 读取提交状态
-function readSubmissions() {
-  if (isVercel) {
-    return memoryStorage.submissions || null
-  }
-  try {
-    const filePath = getSubmissionsPath()
-    if (!fs.existsSync(filePath)) {
-      return null
-    }
-    const data = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return null
-  }
-}
-
-// 保存提交状态
-function saveSubmissions(data: any) {
-  if (isVercel) {
-    memoryStorage.submissions = data
-    return
-  }
-  const filePath = getSubmissionsPath()
-  const dir = path.dirname(filePath)
-  
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+// 全局内存存储（用于 Vercel 无服务器环境）
+// 注意：每个函数实例有自己的内存，请求之间可能不共享
+const globalStore: { submissions: Record<string, any> | null } = {
+  submissions: null
 }
 
 // 设置请假状态
@@ -64,40 +24,34 @@ export async function POST(request: NextRequest) {
     }
 
     const weekOf = getWeekMonday()
-    let submissions = readSubmissions()
-
-    // 初始化数据结构
-    if (!submissions || submissions.weekOf !== weekOf) {
-      submissions = {
+    
+    // 初始化或获取现有数据
+    if (!globalStore.submissions || globalStore.submissions.weekOf !== weekOf) {
+      globalStore.submissions = {
         weekOf,
         submissions: {},
         leaves: {},
       }
     }
 
-    if (!submissions.leaves) {
-      submissions.leaves = {}
+    if (!globalStore.submissions.leaves) {
+      globalStore.submissions.leaves = {}
     }
 
     // 设置请假状态
-    submissions.leaves[memberId] = onLeave
-
-    saveSubmissions(submissions)
+    globalStore.submissions.leaves[memberId] = onLeave
 
     return NextResponse.json({
       success: true,
       memberId,
       onLeave,
-      isVercel, // 返回环境信息
+      message: '请假状态已更新（内存存储）'
     })
   } catch (error) {
     console.error('设置请假状态失败:', error)
     return NextResponse.json(
-      { error: '设置请假状态失败' },
+      { error: '设置请假状态失败: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
     )
   }
 }
-
-
-
