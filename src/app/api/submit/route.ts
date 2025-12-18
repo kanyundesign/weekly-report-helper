@@ -6,7 +6,7 @@ import {
   updateMemberReport 
 } from '@/lib/notion'
 import membersConfig from '../../../../config/members.json'
-import { globalStore } from '../members/route'
+import { globalStore } from '@/lib/store'
 
 export async function POST(request: NextRequest) {
   try {

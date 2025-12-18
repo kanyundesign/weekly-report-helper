@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getWeekMonday } from '@/lib/notion'
-import { globalStore } from '../../members/route'
+import { globalStore } from '@/lib/store'
 
 // 设置请假状态
 export async function POST(request: NextRequest) {

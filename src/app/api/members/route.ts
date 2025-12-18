@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
 import membersConfig from '../../../../config/members.json'
 import { getWeekMonday, getWeekRange } from '@/lib/notion'
-
-// 全局内存存储
-export const globalStore: { submissions: Record<string, any> | null } = {
-  submissions: null
-}
+import { globalStore } from '@/lib/store'
 
 export async function GET() {
   try {
