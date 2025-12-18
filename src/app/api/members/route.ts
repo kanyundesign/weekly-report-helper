@@ -4,6 +4,21 @@ import { getWeekMonday, getWeekRange } from '@/lib/notion'
 import fs from 'fs'
 import path from 'path'
 
+// 检测是否在 Vercel 环境
+const isVercel = process.env.VERCEL === '1'
+
+// 导入内存存储（在 Vercel 上共享）
+let memoryStorage: Record<string, any> = {}
+
+// 导出内存存储以便其他模块使用
+export function getMemoryStorage() {
+  return memoryStorage
+}
+
+export function setMemoryStorage(key: string, value: any) {
+  memoryStorage[key] = value
+}
+
 // 获取提交状态文件路径
 function getSubmissionsPath() {
   return path.join(process.cwd(), 'data', 'submissions.json')
@@ -11,6 +26,9 @@ function getSubmissionsPath() {
 
 // 读取提交状态（包含请假信息）
 function readSubmissions() {
+  if (isVercel) {
+    return memoryStorage.submissions || null
+  }
   try {
     const filePath = getSubmissionsPath()
     if (!fs.existsSync(filePath)) {

@@ -3,6 +3,12 @@ import { getWeekMonday } from '@/lib/notion'
 import fs from 'fs'
 import path from 'path'
 
+// 检测是否在 Vercel 环境
+const isVercel = process.env.VERCEL === '1'
+
+// 内存存储（用于 Vercel 环境）
+let memoryStorage: Record<string, any> = {}
+
 // 获取提交状态文件路径
 function getSubmissionsPath() {
   return path.join(process.cwd(), 'data', 'submissions.json')
@@ -10,6 +16,9 @@ function getSubmissionsPath() {
 
 // 读取提交状态
 function readSubmissions() {
+  if (isVercel) {
+    return memoryStorage.submissions || null
+  }
   try {
     const filePath = getSubmissionsPath()
     if (!fs.existsSync(filePath)) {
@@ -24,6 +33,10 @@ function readSubmissions() {
 
 // 保存提交状态
 function saveSubmissions(data: any) {
+  if (isVercel) {
+    memoryStorage.submissions = data
+    return
+  }
   const filePath = getSubmissionsPath()
   const dir = path.dirname(filePath)
   
@@ -75,6 +88,7 @@ export async function POST(request: NextRequest) {
       success: true,
       memberId,
       onLeave,
+      isVercel, // 返回环境信息
     })
   } catch (error) {
     console.error('设置请假状态失败:', error)
@@ -84,4 +98,6 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+
 

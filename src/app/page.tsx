@@ -253,6 +253,9 @@ export default function Home() {
             <div className="mt-4 flex items-center justify-between">
               <p className="text-xs text-orange-600">
                 💡 已提交的成员无法设为请假。设置后点击提交同步到周报。
+                {typeof window !== 'undefined' && window.location.hostname.includes('vercel') && (
+                  <span className="block mt-1 text-orange-500">⚠️ 在线版本的请假状态刷新后会重置，建议在本地操作。</span>
+                )}
               </p>
               <button
                 onClick={syncLeaveToNotion}
