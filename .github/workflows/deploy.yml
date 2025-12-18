@@ -1,10 +1,12 @@
 name: Deploy to GitHub Pages
 
+# ⚠️ 已禁用：此应用使用 API routes，需要部署到 Vercel
+# GitHub Pages 仅支持静态页面，无法运行 API
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch:  # 仅手动触发，不再自动部署
+  # push:
+  #   branches:
+  #     - main
 
 permissions:
   contents: read
