@@ -6,39 +6,7 @@ import {
   updateMemberReport 
 } from '@/lib/notion'
 import membersConfig from '../../../../config/members.json'
-import fs from 'fs'
-import path from 'path'
-
-// 获取提交状态文件路径
-function getSubmissionsPath() {
-  return path.join(process.cwd(), 'data', 'submissions.json')
-}
-
-// 读取提交状态
-function readSubmissions() {
-  try {
-    const filePath = getSubmissionsPath()
-    if (!fs.existsSync(filePath)) {
-      return null
-    }
-    const data = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return null
-  }
-}
-
-// 保存提交状态
-function saveSubmissions(data: any) {
-  const filePath = getSubmissionsPath()
-  const dir = path.dirname(filePath)
-  
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true })
-  }
-  
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
-}
+import { globalStore } from '../members/route'
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,7 +25,9 @@ export async function POST(request: NextRequest) {
     }
 
     const weekOf = getWeekMonday()
-    let submissions = readSubmissions()
+    
+    // 从全局存储获取提交状态
+    const submissions = globalStore.submissions
 
     // 检查是否已提交
     if (submissions?.weekOf === weekOf && submissions.submissions?.[member]?.submitted) {
@@ -79,7 +49,7 @@ export async function POST(request: NextRequest) {
     let pageId = await findWeeklyReportPage(weekOf)
     
     if (!pageId) {
-      // 从 submissions.json 读取请假状态
+      // 从内存存储读取请假状态
       const currentLeaves = submissions?.weekOf === weekOf ? (submissions.leaves || {}) : {}
       
       // 创建新页面（传递成员信息包含请假状态）
@@ -101,21 +71,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 更新提交状态
-    if (!submissions || submissions.weekOf !== weekOf) {
-      submissions = {
+    // 更新内存中的提交状态
+    if (!globalStore.submissions || globalStore.submissions.weekOf !== weekOf) {
+      globalStore.submissions = {
         weekOf,
         pageId,
         submissions: {},
+        leaves: {},
       }
     }
     
-    submissions.submissions[member] = {
+    globalStore.submissions.submissions[member] = {
       submitted: true,
       time: new Date().toISOString(),
     }
-    
-    saveSubmissions(submissions)
 
     return NextResponse.json({ 
       success: true, 

@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getWeekMonday } from '@/lib/notion'
-
-// 全局内存存储（用于 Vercel 无服务器环境）
-// 注意：每个函数实例有自己的内存，请求之间可能不共享
-const globalStore: { submissions: Record<string, any> | null } = {
-  submissions: null
-}
+import { globalStore } from '../../members/route'
 
 // 设置请假状态
 export async function POST(request: NextRequest) {
@@ -45,7 +40,7 @@ export async function POST(request: NextRequest) {
       success: true,
       memberId,
       onLeave,
-      message: '请假状态已更新（内存存储）'
+      message: '请假状态已更新'
     })
   } catch (error) {
     console.error('设置请假状态失败:', error)
