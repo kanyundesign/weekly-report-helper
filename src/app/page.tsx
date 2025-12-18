@@ -153,8 +153,14 @@ export default function Home() {
 
   // 切换请假状态
   const toggleLeave = async (member: Member) => {
+    const newLeaveStatus = !member.onLeave
+    
+    // 立即更新本地状态（乐观更新）
+    setMembers(prev => prev.map(m =>
+      m.id === member.id ? { ...m, onLeave: newLeaveStatus } : m
+    ))
+    
     try {
-      const newLeaveStatus = !member.onLeave
       const res = await fetch('/api/admin/leave', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,13 +170,13 @@ export default function Home() {
         }),
       })
       
-      if (res.ok) {
-        setMembers(prev => prev.map(m =>
-          m.id === member.id ? { ...m, onLeave: newLeaveStatus } : m
-        ))
+      if (!res.ok) {
+        // API 失败，但本地状态已更新，不回滚
+        console.warn('API 保存失败，但本地状态已更新')
       }
     } catch (err) {
       console.error('设置请假状态失败:', err)
+      // 网络错误时也不回滚，让用户继续操作
     }
   }
 
