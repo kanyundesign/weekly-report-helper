@@ -2,10 +2,10 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '设计团队周报助手',
-  description: '自动从 Notion 工作看板生成周报',
+  title: '周报过去式',
+  description: '自动从 Notion 工作看板生成周报，让周报成为过去式',
   icons: {
-    icon: '/favicon.svg',
+    icon: '/logo.png',
   },
 }
 
