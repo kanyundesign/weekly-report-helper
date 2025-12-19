@@ -144,7 +144,11 @@ export default function Home() {
       ))
       setSelectedMember(prev => prev ? { ...prev, submitted: true } : null)
       
-      alert('✅ 周报提交成功！')
+      // 询问是否跳转到 Notion 查看
+      if (data.pageId && confirm('✅ 周报提交成功！\n\n是否打开 Notion 周报页面进行校对？')) {
+        const notionUrl = `https://www.notion.so/${data.pageId.replace(/-/g, '')}`
+        window.open(notionUrl, '_blank')
+      }
     } catch (err: any) {
       console.error('提交失败:', err)
       setError(err.message || '提交失败，请重试')
@@ -227,6 +231,7 @@ export default function Home() {
     setBatchProgress({ current: 0, total: pendingMembers.length, currentMember: '' })
 
     const results: { name: string; success: boolean; error?: string }[] = []
+    let reportPageId: string | null = null
 
     for (let i = 0; i < pendingMembers.length; i++) {
       const member = pendingMembers[i]
@@ -273,6 +278,10 @@ export default function Home() {
         
         if (submitRes.ok) {
           results.push({ name: member.name, success: true })
+          // 保存周报页面 ID
+          if (submitData.pageId) {
+            reportPageId = submitData.pageId
+          }
           // 更新本地状态
           setMembers(prev => prev.map(m =>
             m.id === member.id ? { ...m, submitted: true } : m
@@ -296,7 +305,18 @@ export default function Home() {
     if (failedResults.length > 0) {
       message += `\n\n❌ 失败的成员:\n${failedResults.map(r => `- ${r.name}: ${r.error}`).join('\n')}`
     }
-    alert(message)
+    
+    // 如果有成功提交，询问是否跳转到 Notion 查看
+    if (successCount > 0 && reportPageId) {
+      message += `\n\n是否打开 Notion 周报页面进行校对？`
+      if (confirm(message)) {
+        // 构建 Notion 页面 URL（移除 pageId 中的横线）
+        const notionUrl = `https://www.notion.so/${reportPageId.replace(/-/g, '')}`
+        window.open(notionUrl, '_blank')
+      }
+    } else {
+      alert(message)
+    }
 
     // 刷新成员列表
     fetchMembers()
