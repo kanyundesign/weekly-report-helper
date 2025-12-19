@@ -38,6 +38,7 @@ export default function Home() {
   const [isSyncingLeave, setIsSyncingLeave] = useState(false)
   const [isBatchGenerating, setIsBatchGenerating] = useState(false)
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentMember: '' })
+  const [successModal, setSuccessModal] = useState<{ show: boolean; message: string; pageId: string | null }>({ show: false, message: '', pageId: null })
 
   // 加载成员列表
   useEffect(() => {
@@ -144,11 +145,12 @@ export default function Home() {
       ))
       setSelectedMember(prev => prev ? { ...prev, submitted: true } : null)
       
-      // 询问是否跳转到 Notion 查看
-      if (data.pageId && confirm('✅ 周报提交成功！\n\n是否打开 Notion 周报页面进行校对？')) {
-        const notionUrl = `https://www.notion.so/${data.pageId.replace(/-/g, '')}`
-        window.open(notionUrl, '_blank')
-      }
+      // 显示成功模态框
+      setSuccessModal({
+        show: true,
+        message: '周报提交成功！',
+        pageId: data.pageId || null
+      })
     } catch (err: any) {
       console.error('提交失败:', err)
       setError(err.message || '提交失败，请重试')
@@ -306,17 +308,12 @@ export default function Home() {
       message += `\n\n❌ 失败的成员:\n${failedResults.map(r => `- ${r.name}: ${r.error}`).join('\n')}`
     }
     
-    // 如果有成功提交，询问是否跳转到 Notion 查看
-    if (successCount > 0 && reportPageId) {
-      message += `\n\n是否打开 Notion 周报页面进行校对？`
-      if (confirm(message)) {
-        // 构建 Notion 页面 URL（移除 pageId 中的横线）
-        const notionUrl = `https://www.notion.so/${reportPageId.replace(/-/g, '')}`
-        window.open(notionUrl, '_blank')
-      }
-    } else {
-      alert(message)
-    }
+    // 显示成功模态框
+    setSuccessModal({
+      show: true,
+      message: `批量生成完成！\n\n成功: ${successCount}/${pendingMembers.length}${failedResults.length > 0 ? `\n\n失败: ${failedResults.map(r => r.name).join(', ')}` : ''}`,
+      pageId: reportPageId
+    })
 
     // 刷新成员列表
     fetchMembers()
@@ -646,6 +643,47 @@ export default function Home() {
           <p>Designed & Developed by yifan</p>
         </footer>
       </div>
+
+      {/* 成功模态框 */}
+      {successModal.show && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 max-w-md mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-slate-800 mb-2">✅ {successModal.message}</h3>
+              {successModal.pageId && (
+                <p className="text-slate-500 mb-6">点击下方按钮前往 Notion 进行校对</p>
+              )}
+              <div className="flex flex-col gap-3">
+                {successModal.pageId && (
+                  <a
+                    href={`https://www.notion.so/${successModal.pageId.replace(/-/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium rounded-xl shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+                    onClick={() => setSuccessModal({ show: false, message: '', pageId: null })}
+                  >
+                    <span>打开 Notion 周报页面</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                )}
+                <button
+                  onClick={() => setSuccessModal({ show: false, message: '', pageId: null })}
+                  className="w-full px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-xl transition-all duration-200"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
