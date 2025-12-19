@@ -36,6 +36,8 @@ export default function Home() {
   const [tasks, setTasks] = useState<{ inProgress: Task[], nextUp: Task[] } | null>(null)
   const [isAdminMode, setIsAdminMode] = useState(false)
   const [isSyncingLeave, setIsSyncingLeave] = useState(false)
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentMember: '' })
 
   // 加载成员列表
   useEffect(() => {
@@ -207,6 +209,99 @@ export default function Home() {
     }
   }
 
+  // 一键批量生成所有人周报
+  const batchGenerateAll = async () => {
+    // 获取需要生成周报的成员（未提交且不请假）
+    const pendingMembers = members.filter(m => !m.submitted && !m.onLeave)
+    
+    if (pendingMembers.length === 0) {
+      alert('没有需要生成周报的成员')
+      return
+    }
+
+    if (!confirm(`确定要为 ${pendingMembers.length} 位成员生成并提交周报吗？\n\n这可能需要几分钟时间。`)) {
+      return
+    }
+
+    setIsBatchGenerating(true)
+    setBatchProgress({ current: 0, total: pendingMembers.length, currentMember: '' })
+
+    const results: { name: string; success: boolean; error?: string }[] = []
+
+    for (let i = 0; i < pendingMembers.length; i++) {
+      const member = pendingMembers[i]
+      setBatchProgress({ current: i + 1, total: pendingMembers.length, currentMember: member.name })
+
+      try {
+        // 1. 获取任务数据
+        const tasksRes = await fetch(`/api/tasks?member=${encodeURIComponent(member.name)}`)
+        const tasksData = await tasksRes.json()
+        
+        if (!tasksRes.ok) {
+          results.push({ name: member.name, success: false, error: tasksData.error || '获取任务失败' })
+          continue
+        }
+
+        // 2. 生成周报
+        const generateRes = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            member: member.name,
+            inProgress: tasksData.inProgress,
+            nextUp: tasksData.nextUp,
+          }),
+        })
+        const generateData = await generateRes.json()
+        
+        if (!generateRes.ok) {
+          results.push({ name: member.name, success: false, error: generateData.error || '生成周报失败' })
+          continue
+        }
+
+        // 3. 提交周报
+        const submitRes = await fetch('/api/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            member: member.id,
+            content: generateData.report,
+            extraInfo: '',
+          }),
+        })
+        const submitData = await submitRes.json()
+        
+        if (submitRes.ok) {
+          results.push({ name: member.name, success: true })
+          // 更新本地状态
+          setMembers(prev => prev.map(m =>
+            m.id === member.id ? { ...m, submitted: true } : m
+          ))
+        } else {
+          results.push({ name: member.name, success: false, error: submitData.error || '提交失败' })
+        }
+      } catch (err) {
+        results.push({ name: member.name, success: false, error: String(err) })
+      }
+    }
+
+    setIsBatchGenerating(false)
+    setBatchProgress({ current: 0, total: 0, currentMember: '' })
+
+    // 显示结果
+    const successCount = results.filter(r => r.success).length
+    const failedResults = results.filter(r => !r.success)
+    
+    let message = `✅ 批量生成完成！\n\n成功: ${successCount}/${pendingMembers.length}`
+    if (failedResults.length > 0) {
+      message += `\n\n❌ 失败的成员:\n${failedResults.map(r => `- ${r.name}: ${r.error}`).join('\n')}`
+    }
+    alert(message)
+
+    // 刷新成员列表
+    fetchMembers()
+  }
+
   // 统计提交情况
   const submittedCount = members.filter(m => m.submitted).length
   const leaveCount = members.filter(m => m.onLeave).length
@@ -288,6 +383,43 @@ export default function Home() {
                   </>
                 )}
               </button>
+            </div>
+
+            {/* 批量操作区域 */}
+            <div className="mt-6 pt-6 border-t border-orange-200">
+              <h3 className="text-md font-semibold text-orange-800 mb-3 flex items-center gap-2">
+                🚀 批量操作
+              </h3>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={batchGenerateAll}
+                  disabled={isBatchGenerating || members.filter(m => !m.submitted && !m.onLeave).length === 0}
+                  className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                    members.filter(m => !m.submitted && !m.onLeave).length === 0
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/25'
+                  }`}
+                >
+                  {isBatchGenerating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      生成中 ({batchProgress.current}/{batchProgress.total})
+                    </>
+                  ) : (
+                    <>
+                      ⚡ 一键生成全部周报 ({members.filter(m => !m.submitted && !m.onLeave).length}人)
+                    </>
+                  )}
+                </button>
+                {isBatchGenerating && batchProgress.currentMember && (
+                  <span className="text-sm text-orange-600">
+                    正在处理: {batchProgress.currentMember}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-orange-500 mt-2">
+                💡 将为所有未提交且未请假的成员自动生成周报并提交到 Notion
+              </p>
             </div>
           </div>
         )}
