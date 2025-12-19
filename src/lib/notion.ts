@@ -17,6 +17,12 @@ export interface Task {
   project: string
   lastEditedTime: string
   content: string[]
+  // 新增日期字段
+  startDate: string | null    // 开始日期
+  endDate: string | null      // 结束日期
+  isOverdue: boolean          // 是否延期
+  daysOverdue: number         // 延期天数
+  daysRemaining: number       // 剩余天数（负数表示已过期）
 }
 
 // ⚠️ 测试模式：模拟日期为 2025-12-22（周一）
@@ -146,6 +152,33 @@ export async function fetchTasks(assigneeName: string): Promise<{
       const status = page.properties['Status']?.select?.name || page.properties['Status']?.status?.name || ''
       const project = page.properties['Project']?.select?.name || ''
       
+      // 获取日期信息
+      const dateProp = page.properties['Date'] || page.properties['日期'] || page.properties['Deadline']
+      let startDate: string | null = null
+      let endDate: string | null = null
+      
+      if (dateProp?.date) {
+        startDate = dateProp.date.start || null
+        endDate = dateProp.date.end || dateProp.date.start || null
+      }
+      
+      // 计算延期状态
+      const now = getCurrentDate()
+      let isOverdue = false
+      let daysOverdue = 0
+      let daysRemaining = 0
+      
+      if (endDate && status !== 'Done') {
+        const endDateObj = new Date(endDate)
+        const diffTime = endDateObj.getTime() - now.getTime()
+        daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+        
+        if (daysRemaining < 0) {
+          isOverdue = true
+          daysOverdue = Math.abs(daysRemaining)
+        }
+      }
+      
       // 获取页面内容（子任务）
       let content: string[] = []
       try {
@@ -180,6 +213,11 @@ export async function fetchTasks(assigneeName: string): Promise<{
         project,
         lastEditedTime: page.last_edited_time,
         content,
+        startDate,
+        endDate,
+        isOverdue,
+        daysOverdue,
+        daysRemaining,
       }
     }
 
@@ -566,6 +604,197 @@ export async function updateMemberReport(
     return true
   } catch (error) {
     console.error('更新成员周报失败:', error)
+    return false
+  }
+}
+
+// 生成进度条字符
+function generateProgressBar(percent: number): string {
+  const filled = Math.round(percent / 10)
+  const empty = 10 - filled
+  return '█'.repeat(filled) + '░'.repeat(empty)
+}
+
+// 在周报底部添加任务状态总览和风险预警
+export async function addTeamSummary(
+  pageId: string, 
+  allTasks: { memberName: string; tasks: Task[] }[]
+): Promise<boolean> {
+  try {
+    // 统计所有任务
+    let totalTasks = 0
+    let doneTasks = 0
+    let inProgressTasks = 0
+    let nextUpTasks = 0
+    let reviewTasks = 0
+    let overdueTasks: { member: string; task: Task }[] = []
+    let urgentTasks: { member: string; task: Task }[] = []
+    
+    for (const { memberName, tasks } of allTasks) {
+      for (const task of tasks) {
+        totalTasks++
+        
+        if (task.status === 'Done') {
+          doneTasks++
+        } else if (task.status === 'In Progress') {
+          inProgressTasks++
+        } else if (task.status === 'Next Up') {
+          nextUpTasks++
+        } else if (task.status === 'Review') {
+          reviewTasks++
+        }
+        
+        if (task.isOverdue) {
+          overdueTasks.push({ member: memberName, task })
+        } else if (task.daysRemaining > 0 && task.daysRemaining <= 2) {
+          urgentTasks.push({ member: memberName, task })
+        }
+      }
+    }
+    
+    // 计算百分比
+    const donePercent = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
+    const inProgressPercent = totalTasks > 0 ? Math.round((inProgressTasks / totalTasks) * 100) : 0
+    const nextUpPercent = totalTasks > 0 ? Math.round((nextUpTasks / totalTasks) * 100) : 0
+    const reviewPercent = totalTasks > 0 ? Math.round((reviewTasks / totalTasks) * 100) : 0
+    
+    // 构建 blocks
+    const blocks: any[] = [
+      // 分隔线
+      {
+        object: 'block',
+        type: 'divider',
+        divider: {},
+      },
+      // 标题
+      {
+        object: 'block',
+        type: 'heading_2',
+        heading_2: {
+          rich_text: [{ type: 'text', text: { content: '📊 团队任务状态总览' } }],
+        },
+      },
+      // 状态统计
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            { type: 'text', text: { content: `✅ 已完成  ${generateProgressBar(donePercent)} ${doneTasks}个 (${donePercent}%)` } },
+          ],
+        },
+      },
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            { type: 'text', text: { content: `🔄 进行中  ${generateProgressBar(inProgressPercent)} ${inProgressTasks}个 (${inProgressPercent}%)` } },
+          ],
+        },
+      },
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            { type: 'text', text: { content: `📋 待开始  ${generateProgressBar(nextUpPercent)} ${nextUpTasks}个 (${nextUpPercent}%)` } },
+          ],
+        },
+      },
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            { type: 'text', text: { content: `👀 评审中  ${generateProgressBar(reviewPercent)} ${reviewTasks}个 (${reviewPercent}%)` } },
+          ],
+        },
+      },
+    ]
+    
+    // 风险预警
+    if (overdueTasks.length > 0 || urgentTasks.length > 0) {
+      blocks.push({
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: [] },
+      })
+      
+      blocks.push({
+        object: 'block',
+        type: 'heading_2',
+        heading_2: {
+          rich_text: [{ type: 'text', text: { content: '🚨 风险预警' } }],
+        },
+      })
+      
+      // 延期任务
+      if (overdueTasks.length > 0) {
+        blocks.push({
+          object: 'block',
+          type: 'callout',
+          callout: {
+            icon: { emoji: '🔴' },
+            color: 'red_background',
+            rich_text: [
+              { type: 'text', text: { content: `延期任务 (${overdueTasks.length}个)` }, annotations: { bold: true } },
+            ],
+          },
+        })
+        
+        for (const { member, task } of overdueTasks) {
+          blocks.push({
+            object: 'block',
+            type: 'bulleted_list_item',
+            bulleted_list_item: {
+              rich_text: [
+                { type: 'text', text: { content: `${task.title}` }, annotations: { bold: true } },
+                { type: 'text', text: { content: ` — ${member} — 已延期 ${task.daysOverdue} 天` } },
+              ],
+            },
+          })
+        }
+      }
+      
+      // 即将到期任务
+      if (urgentTasks.length > 0) {
+        blocks.push({
+          object: 'block',
+          type: 'callout',
+          callout: {
+            icon: { emoji: '⚠️' },
+            color: 'yellow_background',
+            rich_text: [
+              { type: 'text', text: { content: `即将到期任务 (${urgentTasks.length}个)` }, annotations: { bold: true } },
+            ],
+          },
+        })
+        
+        for (const { member, task } of urgentTasks) {
+          blocks.push({
+            object: 'block',
+            type: 'bulleted_list_item',
+            bulleted_list_item: {
+              rich_text: [
+                { type: 'text', text: { content: `${task.title}` }, annotations: { bold: true } },
+                { type: 'text', text: { content: ` — ${member} — 还剩 ${task.daysRemaining} 天` } },
+              ],
+            },
+          })
+        }
+      }
+    }
+    
+    // 添加到页面底部
+    await notion.blocks.children.append({
+      block_id: pageId,
+      children: blocks,
+    })
+    
+    return true
+  } catch (error) {
+    console.error('添加团队总览失败:', error)
     return false
   }
 }

@@ -308,6 +308,16 @@ export default function Home() {
       message += `\n\n❌ 失败的成员:\n${failedResults.map(r => `- ${r.name}: ${r.error}`).join('\n')}`
     }
     
+    // 如果有成功提交的，添加团队任务总览
+    if (successCount > 0 && reportPageId) {
+      setBatchProgress({ current: pendingMembers.length, total: pendingMembers.length, currentMember: '正在生成团队总览...' })
+      try {
+        await fetch('/api/team-summary', { method: 'POST' })
+      } catch (err) {
+        console.error('生成团队总览失败:', err)
+      }
+    }
+
     // 显示成功模态框
     setSuccessModal({
       show: true,
