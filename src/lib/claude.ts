@@ -20,35 +20,122 @@ function generateProgressBar(percent: number): string {
   return '█'.repeat(filled) + '░'.repeat(empty)
 }
 
+// 解析工时（如 "1pd", "0.5pd", "2h"）
+function parseWorktime(text: string): number {
+  const pdMatch = text.match(/(\d+\.?\d*)\s*pd/i)
+  if (pdMatch) {
+    return parseFloat(pdMatch[1])
+  }
+  const hMatch = text.match(/(\d+\.?\d*)\s*h/i)
+  if (hMatch) {
+    return parseFloat(hMatch[1]) / 8 // 转换为 pd
+  }
+  return 0
+}
+
+// 计算任务进度
+function calculateProgress(subtasks: string[]): { percent: number; completed: number; total: number; totalPd: number; completedPd: number } {
+  let totalPd = 0
+  let completedPd = 0
+  let completed = 0
+  let total = 0
+  
+  for (const subtask of subtasks) {
+    const worktime = parseWorktime(subtask)
+    const isCompleted = subtask.includes('✅')
+    
+    if (worktime > 0) {
+      totalPd += worktime
+      if (isCompleted) {
+        completedPd += worktime
+      }
+    }
+    
+    // 只统计看起来像子任务的内容（有数字开头或有工时）
+    if (/^\d+\.?\s*/.test(subtask) || worktime > 0) {
+      total++
+      if (isCompleted) {
+        completed++
+      }
+    }
+  }
+  
+  // 优先使用工时计算进度
+  let percent = 0
+  if (totalPd > 0) {
+    percent = Math.round((completedPd / totalPd) * 100)
+  } else if (total > 0) {
+    percent = Math.round((completed / total) * 100)
+  }
+  
+  return { percent, completed, total, totalPd, completedPd }
+}
+
 // 生成周报的 Prompt
 function buildPrompt(assignee: string, currentTasks: Task[], doneTasks: Task[]): string {
-  // 本周计划（Next Up、In Progress、Review）- 包含日期和延期信息
+  // 本周计划（Next Up、In Progress、Review）- 包含日期、延期信息和进度条
   const currentInfo = currentTasks.map(task => {
     const subtasks = task.content.length > 0 
       ? task.content.map((c, i) => `   ${i + 1}. ${c}`).join('\n')
       : '   （无子任务详情）'
     
+    // 计算进度
+    const progress = calculateProgress(task.content)
+    const progressBar = generateProgressBar(progress.percent)
+    
+    // 判断是否进度落后（时间进度 > 工作进度 + 10%）
+    const isBehindSchedule = task.timeProgress > 0 && 
+                             progress.percent < task.timeProgress - 10 &&
+                             task.status !== 'Done'
+    
+    // 状态标记
+    let statusMark = ''
+    if (task.isOverdue) {
+      statusMark = ' 🔴 已延期'
+    } else if (isBehindSchedule) {
+      statusMark = ' ⚠️ 进度落后'
+    } else if (task.daysRemaining > 0 && task.daysRemaining <= 2) {
+      statusMark = ' ⏰ 即将到期'
+    }
+    
+    // 进度信息
+    let progressInfo = ''
+    if (progress.totalPd > 0) {
+      progressInfo = `  📊 进度: ${progressBar} ${progress.percent}% (${progress.completedPd}pd/${progress.totalPd}pd)`
+    } else if (progress.total > 0) {
+      progressInfo = `  📊 进度: ${progressBar} ${progress.percent}% (${progress.completed}/${progress.total})`
+    }
+    
     // 日期信息
     let dateInfo = ''
     if (task.startDate && task.endDate) {
-      dateInfo = `  计划时间: ${task.startDate} ~ ${task.endDate}`
+      dateInfo = `  📅 计划: ${task.startDate} ~ ${task.endDate}`
     } else if (task.endDate) {
-      dateInfo = `  截止日期: ${task.endDate}`
+      dateInfo = `  📅 截止: ${task.endDate}`
     }
     
     // 延期/剩余时间信息
     let timeStatus = ''
     if (task.isOverdue) {
-      timeStatus = `  ⚠️ 已延期 ${task.daysOverdue} 天`
+      timeStatus = `  🔴 已延期 ${task.daysOverdue} 天`
     } else if (task.daysRemaining > 0 && task.daysRemaining <= 2) {
       timeStatus = `  ⏰ 还剩 ${task.daysRemaining} 天`
-    } else if (task.daysRemaining > 0) {
-      timeStatus = `  剩余 ${task.daysRemaining} 天`
     }
     
-    return `- 任务: ${task.title}
+    // 延期预警信息
+    let warningInfo = ''
+    if (task.isOverdue) {
+      warningInfo = `  ⚠️ 延期预警: 已延期 ${task.daysOverdue} 天，请关注！`
+    } else if (isBehindSchedule) {
+      const behindPercent = task.timeProgress - progress.percent
+      warningInfo = `  ⚠️ 进度预警: 时间已过 ${task.timeProgress}%，但工作进度仅 ${progress.percent}%，落后 ${behindPercent}%！`
+    } else if (task.daysRemaining > 0 && task.daysRemaining <= 2) {
+      warningInfo = `  ⚠️ 临期预警: 还剩 ${task.daysRemaining} 天，请加快进度！`
+    }
+    
+    return `- 任务: ${task.title}${statusMark}
   状态: ${task.status}
-  项目: ${task.project || '未分类'}${dateInfo}${timeStatus}
+  项目: ${task.project || '未分类'}${progressInfo}${dateInfo}${timeStatus}${warningInfo}
   子任务:
 ${subtasks}`
   }).join('\n\n')
@@ -78,63 +165,45 @@ ${currentInfo || '（无计划任务）'}
 ### 上周完成（Done 中的任务）：
 ${doneInfo || '（无已完成任务）'}
 
-### 延期任务：${overdueTasks.length} 个
-### 即将到期任务（2天内）：${urgentTasks.length} 个
+### ⚠️ 延期任务：${overdueTasks.length} 个
+### ⏰ 即将到期任务（2天内）：${urgentTasks.length} 个
 
-## 周报格式要求
-
-请按以下格式生成周报：
+## 周报格式要求（必须严格遵守）
 
 ### 1. 上周完成
 
-a. [已完成的任务名] ✅
-b. [另一个已完成的任务] ✅
+• [已完成的任务名] ✅
 
-（如果没有已完成的任务，显示"暂无"）
+（如果没有已完成的任务，显示"• 暂无"）
 
 ### 2. 本周计划
 
-对于每个任务，使用进度条显示进度：
+**重要：必须复制任务数据中的状态标记（🔴 或 ⚠️）和进度条信息！**
 
-a. [任务名] — [进度条] [百分比]
-   - 进度条格式：████████░░ 80%（用 █ 表示已完成，░ 表示未完成，共10格）
-   - 如果任务已延期，在任务名后加 🔴
-   - 如果任务即将到期（2天内），在任务名后加 ⚠️
-   
-   i. [子任务1] ✅
-   ii. [子任务2] ✅
-   iii. [子任务3]
+格式：• [任务名] [状态标记] — [进度条] [百分比] [(工时)]
+- 如果任务名后有 🔴，必须保留 🔴
+- 如果任务名后有 ⚠️，必须保留 ⚠️
 
 示例：
-a. 集团工牌需求设计 🔴 — ████████░░ 80%
-   i. 需求分析 1pd ✅
-   ii. 方案设计 2pd ✅
-   iii. 视觉输出 1.5pd
 
-b. 年会海报设计 ⚠️ — ██░░░░░░░░ 20%
-   i. 创意构思 0.5pd ✅
-   ii. 视觉设计 2pd
+• 集团工牌需求设计 🔴 — ████████░░ 80% (4pd/5pd)
+  ◦ 需求分析 1pd ✅
+  ◦ 方案设计 2pd ✅
+  ◦ 视觉输出 1.5pd
 
-## 进度计算规则
+• 年会海报设计 ⚠️ — ██░░░░░░░░ 20% (1pd/5pd)
+  ◦ 创意构思 0.5pd ✅
+  ◦ 视觉设计 2pd
 
-1. 如果子任务中有工时信息（如 0.5pd、2pd），计算 已完成工时/总工时
-2. 如果没有工时信息，计算 已完成子任务数/总子任务数
-3. 子任务末尾有 ✅ 表示已完成
-4. 进度条用 █ 和 ░ 组成，共10格，按百分比填充
+### 3. 时间偏差分析
 
-## 时间偏差分析规则
+**如果有延期或即将到期的任务，必须添加此部分！**
 
-如果存在延期或即将到期的任务，在本周计划后面添加：
+对于每个有 🔴 或 ⚠️ 标记的任务，说明：
+• 🔴 [任务名] — 计划 [截止日期] 完成，已延期 [X] 天，当前进度 [X]%，需要 [建议措施]
+• ⚠️ [任务名] — 还剩 [X] 天，当前进度 [X]%，[能否按时完成的评估]
 
-### ⏰ 时间偏差分析
-
-对于延期任务，说明：
-- 任务名 — 计划 [截止日期] 完成，已延期 [X] 天，当前进度 [X]%
-
-对于即将到期任务，说明：
-- 任务名 — 还剩 [X] 天，当前进度 [X]%，[评估是否可按时完成]
-
-请直接输出周报内容，不要有额外的解释。使用中文。`
+请直接输出周报内容，不要有额外的解释。使用中文。必须使用 █ 和 ░ 符号生成进度条。`
 }
 
 // 调用 Claude 生成周报
@@ -172,56 +241,6 @@ export async function generateReport(
   }
 }
 
-// 解析工时（如 "1pd"、"0.5pd"、"2h" 等）
-function parseWorktime(text: string): number {
-  // 匹配 数字 + pd/PD/天 或 数字 + h/H/小时
-  const pdMatch = text.match(/(\d+\.?\d*)\s*(pd|PD|天)/i)
-  if (pdMatch) {
-    return parseFloat(pdMatch[1])
-  }
-  
-  const hourMatch = text.match(/(\d+\.?\d*)\s*(h|H|小时)/i)
-  if (hourMatch) {
-    return parseFloat(hourMatch[1]) / 8  // 8小时 = 1pd
-  }
-  
-  return 0
-}
-
-// 计算任务进度（基于工时）
-function calculateProgress(subtasks: string[]): { percentage: number; hasWorktime: boolean } {
-  let totalWorktime = 0
-  let completedWorktime = 0
-  
-  subtasks.forEach(subtask => {
-    const worktime = parseWorktime(subtask)
-    if (worktime > 0) {
-      totalWorktime += worktime
-      if (subtask.includes('✅')) {
-        completedWorktime += worktime
-      }
-    }
-  })
-  
-  if (totalWorktime > 0) {
-    return {
-      percentage: Math.round((completedWorktime / totalWorktime) * 100),
-      hasWorktime: true
-    }
-  }
-  
-  // 如果没有工时信息，按子任务数量计算
-  if (subtasks.length > 0) {
-    const completed = subtasks.filter(s => s.includes('✅')).length
-    return {
-      percentage: Math.round((completed / subtasks.length) * 100),
-      hasWorktime: false
-    }
-  }
-  
-  return { percentage: 0, hasWorktime: false }
-}
-
 // 备用方案：简单格式化（不使用 AI）
 export function generateReportFallback(
   assignee: string,
@@ -242,6 +261,9 @@ export function generateReportFallback(
 
   report += '### 2. 本周计划\n\n'
   
+  // 收集需要预警的任务
+  const warningTasks: { task: Task; type: string; message: string }[] = []
+  
   if (currentTasks.length === 0) {
     report += '暂无计划任务\n'
   } else {
@@ -249,15 +271,49 @@ export function generateReportFallback(
       const letter = String.fromCharCode(97 + index)
       
       // 计算进度（基于工时）
-      let progress = ''
-      if (task.content.length > 0) {
-        const { percentage, hasWorktime } = calculateProgress(task.content)
-        if (hasWorktime || percentage > 0) {
-          progress = ` — ${percentage}%`
-        }
+      const { percent, totalPd, completedPd, total, completed } = calculateProgress(task.content)
+      const progressBar = generateProgressBar(percent)
+      
+      // 判断是否进度落后
+      const isBehindSchedule = task.timeProgress > 0 && 
+                               percent < task.timeProgress - 10 &&
+                               task.status !== 'Done'
+      
+      // 状态标记
+      let statusMark = ''
+      if (task.isOverdue) {
+        statusMark = ' 🔴 已延期'
+        warningTasks.push({
+          task,
+          type: '🔴 延期',
+          message: `计划 ${task.endDate} 完成，已延期 ${task.daysOverdue} 天，当前进度 ${percent}%`
+        })
+      } else if (isBehindSchedule) {
+        statusMark = ' ⚠️ 进度落后'
+        const behindPercent = task.timeProgress - percent
+        warningTasks.push({
+          task,
+          type: '⚠️ 进度落后',
+          message: `时间已过 ${task.timeProgress}%，工作进度仅 ${percent}%，落后 ${behindPercent}%`
+        })
+      } else if (task.daysRemaining > 0 && task.daysRemaining <= 2) {
+        statusMark = ' ⏰ 即将到期'
+        warningTasks.push({
+          task,
+          type: '⏰ 即将到期',
+          message: `还剩 ${task.daysRemaining} 天，当前进度 ${percent}%`
+        })
+      }
+      
+      // 进度信息
+      let progressText = ''
+      if (totalPd > 0) {
+        progressText = ` — ${progressBar} ${percent}% (${completedPd}pd/${totalPd}pd)`
+      } else if (total > 0) {
+        progressText = ` — ${progressBar} ${percent}% (${completed}/${total})`
       }
 
-      report += `${letter}. ${task.title}${progress}\n`
+      report += `${letter}. ${task.title}${statusMark}${progressText}\n`
       
       // 子任务
       task.content.forEach((subtask, i) => {
@@ -266,6 +322,15 @@ export function generateReportFallback(
       })
       report += '\n'
     })
+  }
+  
+  // 添加时间偏差分析
+  if (warningTasks.length > 0) {
+    report += '### ⏰ 时间偏差分析\n\n'
+    warningTasks.forEach(({ task, type, message }) => {
+      report += `${type} ${task.title} — ${message}\n`
+    })
+    report += '\n'
   }
 
   return report

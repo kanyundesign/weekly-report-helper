@@ -23,6 +23,9 @@ export interface Task {
   isOverdue: boolean          // 是否延期
   daysOverdue: number         // 延期天数
   daysRemaining: number       // 剩余天数（负数表示已过期）
+  // 进度相关
+  timeProgress: number        // 时间进度（已用时间/总时间）
+  isBehindSchedule: boolean   // 进度是否落后
 }
 
 // ⚠️ 测试模式：模拟日期为 2025-12-22（周一）
@@ -152,8 +155,12 @@ export async function fetchTasks(assigneeName: string): Promise<{
       const status = page.properties['Status']?.select?.name || page.properties['Status']?.status?.name || ''
       const project = page.properties['Project']?.select?.name || ''
       
-      // 获取日期信息
-      const dateProp = page.properties['Date'] || page.properties['日期'] || page.properties['Deadline']
+      // 获取日期信息 - 支持多种属性名
+      const dateProp = page.properties['设计排期'] || 
+                       page.properties['Date'] || 
+                       page.properties['日期'] || 
+                       page.properties['Deadline'] ||
+                       page.properties['排期']
       let startDate: string | null = null
       let endDate: string | null = null
       
@@ -162,11 +169,15 @@ export async function fetchTasks(assigneeName: string): Promise<{
         endDate = dateProp.date.end || dateProp.date.start || null
       }
       
-      // 计算延期状态
+      // 调试日志
+      console.log(`任务 "${title}" 日期信息: start=${startDate}, end=${endDate}`)
+      
+      // 计算延期状态和时间进度
       const now = getCurrentDate()
       let isOverdue = false
       let daysOverdue = 0
       let daysRemaining = 0
+      let timeProgress = 0  // 时间进度百分比
       
       if (endDate && status !== 'Done') {
         const endDateObj = new Date(endDate)
@@ -176,6 +187,17 @@ export async function fetchTasks(assigneeName: string): Promise<{
         if (daysRemaining < 0) {
           isOverdue = true
           daysOverdue = Math.abs(daysRemaining)
+          timeProgress = 100  // 已过期，时间进度100%
+        } else if (startDate) {
+          // 计算时间进度
+          const startDateObj = new Date(startDate)
+          const totalDuration = endDateObj.getTime() - startDateObj.getTime()
+          const elapsedDuration = now.getTime() - startDateObj.getTime()
+          
+          if (totalDuration > 0) {
+            timeProgress = Math.round((elapsedDuration / totalDuration) * 100)
+            timeProgress = Math.max(0, Math.min(100, timeProgress))  // 限制在 0-100
+          }
         }
       }
       
@@ -218,6 +240,8 @@ export async function fetchTasks(assigneeName: string): Promise<{
         isOverdue,
         daysOverdue,
         daysRemaining,
+        timeProgress,
+        isBehindSchedule: false,  // 将在 claude.ts 中根据工作进度计算
       }
     }
 
