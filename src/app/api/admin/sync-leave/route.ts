@@ -13,6 +13,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { leaveMembers } = body as { leaveMembers: string[] }
     
+    console.log('收到请假同步请求:', { leaveMembers })
+    
     if (!leaveMembers || leaveMembers.length === 0) {
       return NextResponse.json({
         success: true,
@@ -46,11 +48,15 @@ export async function POST(request: NextRequest) {
     let updatedCount = 0
     for (const memberId of leaveMembers) {
       const member = membersConfig.members.find((m: any) => m.id === memberId)
+      console.log('处理请假成员:', { memberId, memberName: member?.name })
       if (member) {
         const success = await updateMemberReport(pageId, member.name, '（请假）')
+        console.log('更新结果:', { memberName: member.name, success })
         if (success) {
           updatedCount++
         }
+      } else {
+        console.log('未找到成员配置:', memberId)
       }
     }
 
