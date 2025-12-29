@@ -28,9 +28,8 @@ export interface Task {
   isBehindSchedule: boolean   // 进度是否落后
 }
 
-// ⚠️ 测试模式：模拟日期为 2025-12-22（周一）
-// 正式上线前请设为 false
-const TEST_MODE = true
+// ⚠️ 测试模式：如需模拟日期，将 TEST_MODE 设为 true
+const TEST_MODE = false
 const TEST_DATE = new Date('2025-12-22T10:00:00')
 
 // 获取当前日期（支持测试模式）
