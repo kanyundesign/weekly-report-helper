@@ -88,9 +88,9 @@ export async function fetchTasks(assigneeName: string): Promise<{
     let startCursor: string | undefined = undefined
     
     while (hasMore) {
-      const response = await notion.databases.query({
-        database_id: DATABASE_ID,
-        filter: {
+    const response = await notion.databases.query({
+      database_id: DATABASE_ID,
+      filter: {
           or: [
             {
               property: 'Status',
@@ -199,7 +199,7 @@ export async function fetchTasks(assigneeName: string): Promise<{
           }
         }
       }
-      
+
       // 获取页面内容（子任务）
       let content: string[] = []
       try {
@@ -583,7 +583,7 @@ export async function updateMemberReport(
           memberBlockIndex = i
         } else if (memberBlockIndex !== -1 && nextDividerIndex === -1) {
           nextDividerIndex = i
-          break
+        break
         }
       }
       if (memberBlockIndex !== -1 && block.type === 'divider' && nextDividerIndex === -1) {
@@ -591,9 +591,63 @@ export async function updateMemberReport(
       }
     }
 
+    // 如果找不到成员标题，则自动创建
     if (memberBlockIndex === -1) {
-      console.error('未找到成员区域:', memberName)
-      return false
+      console.log('未找到成员区域，正在创建:', memberName)
+      
+      // 在页面末尾添加成员标题和分隔线
+      await notion.blocks.children.append({
+        block_id: pageId,
+        children: [
+          {
+            object: 'block',
+            type: 'heading_2',
+            heading_2: {
+              rich_text: [{ type: 'text', text: { content: memberName } }],
+            },
+          },
+          {
+            object: 'block',
+            type: 'paragraph',
+            paragraph: {
+              rich_text: [{ type: 'text', text: { content: '（待提交）' } }],
+            },
+          },
+          {
+            object: 'block',
+            type: 'divider',
+            divider: {},
+          },
+        ] as any[],
+      })
+      
+      // 重新获取 blocks 并找到新创建的成员标题
+      const newBlocks = await notion.blocks.children.list({
+        block_id: pageId,
+        page_size: 100,
+      })
+      
+      for (let i = 0; i < newBlocks.results.length; i++) {
+        const block = newBlocks.results[i] as any
+        if (block.type === 'heading_2') {
+          const text = block.heading_2?.rich_text?.[0]?.plain_text || ''
+          if (text === memberName) {
+            memberBlockIndex = i
+            // 找到下一个分隔线
+            for (let j = i + 1; j < newBlocks.results.length; j++) {
+              const nextBlock = newBlocks.results[j] as any
+              if (nextBlock.type === 'divider' || nextBlock.type === 'heading_2') {
+                nextDividerIndex = j
+                break
+              }
+            }
+            break
+          }
+        }
+      }
+      
+      // 更新 blocks 引用
+      Object.assign(blocks, newBlocks)
     }
 
     // 删除旧内容（标题和分隔线之间的内容）
@@ -767,10 +821,10 @@ export async function addTeamSummary(
         })
         
         for (const { member, task } of overdueTasks) {
-          blocks.push({
-            object: 'block',
-            type: 'bulleted_list_item',
-            bulleted_list_item: {
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
               rich_text: [
                 { type: 'text', text: { content: `${task.title}` }, annotations: { bold: true } },
                 { type: 'text', text: { content: ` — ${member} — 已延期 ${task.daysOverdue} 天` } },
@@ -795,18 +849,18 @@ export async function addTeamSummary(
         })
         
         for (const { member, task } of urgentTasks) {
-          blocks.push({
-            object: 'block',
+      blocks.push({
+        object: 'block',
             type: 'bulleted_list_item',
             bulleted_list_item: {
               rich_text: [
                 { type: 'text', text: { content: `${task.title}` }, annotations: { bold: true } },
                 { type: 'text', text: { content: ` — ${member} — 还剩 ${task.daysRemaining} 天` } },
               ],
-            },
-          })
-        }
-      }
+        },
+      })
+    }
+  }
     }
     
     // 添加到页面底部
