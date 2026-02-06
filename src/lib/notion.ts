@@ -422,7 +422,7 @@ export async function createWeeklyReportPage(weekOf: string, members: MemberInfo
           divider: {},
         },
         // 为每个成员创建占位区域
-        ...members.flatMap((member) => {
+        ...members.flatMap((member): any[] => {
           // 管理者：H2 标题 + 3 个空序号列表 + 分隔线
           if (member.role === 'manager') {
             return [
