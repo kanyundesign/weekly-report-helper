@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
       const memberInfos = membersConfig.members.map((m: any) => ({
         name: m.name,
         onLeave: currentLeaves[m.id] || false,
+        role: m.role,
       }))
       pageId = await createWeeklyReportPage(weekOf, memberInfos)
     }

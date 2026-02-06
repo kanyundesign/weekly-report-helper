@@ -7,6 +7,7 @@ import Image from 'next/image'
 interface Member {
   id: string
   name: string
+  role?: string
   submitted?: boolean
   submittedAt?: string
   onLeave?: boolean
@@ -217,8 +218,8 @@ export default function Home() {
 
   // 一键批量生成所有人周报
   const batchGenerateAll = async () => {
-    // 获取需要生成周报的成员（未提交且不请假）
-    const pendingMembers = members.filter(m => !m.submitted && !m.onLeave)
+    // 获取需要生成周报的成员（未提交且不请假，排除管理者）
+    const pendingMembers = members.filter(m => !m.submitted && !m.onLeave && m.role !== 'manager')
     
     if (pendingMembers.length === 0) {
       alert('没有需要生成周报的成员')
@@ -329,10 +330,11 @@ export default function Home() {
     fetchMembers()
   }
 
-  // 统计提交情况
-  const submittedCount = members.filter(m => m.submitted).length
-  const leaveCount = members.filter(m => m.onLeave).length
-  const totalCount = members.length
+  // 统计提交情况（排除管理者）
+  const regularMembers = members.filter(m => m.role !== 'manager')
+  const submittedCount = regularMembers.filter(m => m.submitted).length
+  const leaveCount = regularMembers.filter(m => m.onLeave).length
+  const totalCount = regularMembers.length
 
   return (
     <main className="min-h-screen py-8 px-4">
@@ -366,7 +368,7 @@ export default function Home() {
               <span className="text-sm font-normal text-orange-600">（点击成员切换请假状态）</span>
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {members.map((member) => (
+              {regularMembers.map((member) => (
                 <button
                   key={member.id}
                   onClick={() => toggleLeave(member)}
@@ -420,9 +422,9 @@ export default function Home() {
               <div className="flex items-center gap-4">
                 <button
                   onClick={batchGenerateAll}
-                  disabled={isBatchGenerating || members.filter(m => !m.submitted && !m.onLeave).length === 0}
+                  disabled={isBatchGenerating || regularMembers.filter(m => !m.submitted && !m.onLeave).length === 0}
                   className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                    members.filter(m => !m.submitted && !m.onLeave).length === 0
+                    regularMembers.filter(m => !m.submitted && !m.onLeave).length === 0
                       ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                       : 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg shadow-blue-500/25'
                   }`}
@@ -434,7 +436,7 @@ export default function Home() {
                     </>
                   ) : (
                     <>
-                      ⚡ 一键生成全部周报 ({members.filter(m => !m.submitted && !m.onLeave).length}人)
+                      ⚡ 一键生成全部周报 ({regularMembers.filter(m => !m.submitted && !m.onLeave).length}人)
                     </>
                   )}
                 </button>
@@ -482,7 +484,7 @@ export default function Home() {
                 {/* 下拉菜单 */}
                 {isDropdownOpen && (
                   <div className="absolute z-50 mt-2 w-full sm:w-64 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-100 py-2 animate-fade-in max-h-80 overflow-y-auto">
-                    {members.map((member) => (
+                    {regularMembers.map((member) => (
                       <button
                         key={member.id}
                         onClick={() => !member.onLeave && handleSelectMember(member)}

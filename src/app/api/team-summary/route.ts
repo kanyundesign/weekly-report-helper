@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
     const allTasks: { memberName: string; tasks: Task[] }[] = []
     
     for (const member of membersConfig.members) {
+      // 跳过管理者，管理者不需要自动拉取任务
+      if ((member as any).role === 'manager') continue
+      
       try {
         const { inProgress, nextUp } = await fetchTasks(member.name)
         // 合并所有任务
@@ -58,6 +61,8 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+
 
 
 

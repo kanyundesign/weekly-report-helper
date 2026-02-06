@@ -18,6 +18,7 @@ export async function GET() {
     const members = membersConfig.members.map((member: any) => ({
       id: member.id,
       name: member.name,
+      role: member.role || 'member',
       submitted: currentWeekSubmissions[member.id]?.submitted || false,
       submittedAt: currentWeekSubmissions[member.id]?.time || null,
       onLeave: currentWeekLeaves[member.id] || false,

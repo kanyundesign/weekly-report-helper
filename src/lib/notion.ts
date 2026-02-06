@@ -316,6 +316,7 @@ export async function findWeeklyReportPage(weekOf: string): Promise<string | nul
 interface MemberInfo {
   name: string
   onLeave?: boolean
+  role?: string
 }
 
 // 创建周报页面
@@ -421,30 +422,71 @@ export async function createWeeklyReportPage(weekOf: string, members: MemberInfo
           divider: {},
         },
         // 为每个成员创建占位区域
-        ...members.flatMap((member) => [
-          {
-            object: 'block',
-            type: 'heading_2',
-            heading_2: {
-              rich_text: [{ type: 'text', text: { content: member.name } }],
+        ...members.flatMap((member) => {
+          // 管理者：H2 标题 + 3 个空序号列表 + 分隔线
+          if (member.role === 'manager') {
+            return [
+              {
+                object: 'block',
+                type: 'heading_2',
+                heading_2: {
+                  rich_text: [{ type: 'text', text: { content: member.name } }],
+                },
+              },
+              {
+                object: 'block',
+                type: 'numbered_list_item',
+                numbered_list_item: {
+                  rich_text: [{ type: 'text', text: { content: '' } }],
+                },
+              },
+              {
+                object: 'block',
+                type: 'numbered_list_item',
+                numbered_list_item: {
+                  rich_text: [{ type: 'text', text: { content: '' } }],
+                },
+              },
+              {
+                object: 'block',
+                type: 'numbered_list_item',
+                numbered_list_item: {
+                  rich_text: [{ type: 'text', text: { content: '' } }],
+                },
+              },
+              {
+                object: 'block',
+                type: 'divider',
+                divider: {},
+              },
+            ]
+          }
+          // 普通成员：H2 标题 + 待提交/请假 + 分隔线
+          return [
+            {
+              object: 'block',
+              type: 'heading_2',
+              heading_2: {
+                rich_text: [{ type: 'text', text: { content: member.name } }],
+              },
             },
-          },
-          {
-            object: 'block',
-            type: 'paragraph',
-            paragraph: {
-              rich_text: [{ 
-                type: 'text', 
-                text: { content: member.onLeave ? '（请假）' : '（待提交）' } 
-              }],
+            {
+              object: 'block',
+              type: 'paragraph',
+              paragraph: {
+                rich_text: [{ 
+                  type: 'text', 
+                  text: { content: member.onLeave ? '（请假）' : '（待提交）' } 
+                }],
+              },
             },
-          },
-          {
-            object: 'block',
-            type: 'divider',
-            divider: {},
-          },
-        ]),
+            {
+              object: 'block',
+              type: 'divider',
+              divider: {},
+            },
+          ]
+        }),
       ] as any[],
       })
 

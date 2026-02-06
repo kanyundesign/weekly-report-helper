@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       const memberInfos = membersConfig.members.map((m: any) => ({
         name: m.name,
         onLeave: leaveMembers.includes(m.id),
+        role: m.role,
       }))
       pageId = await createWeeklyReportPage(weekOf, memberInfos)
       

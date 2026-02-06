@@ -7,7 +7,8 @@
     { "id": "yifan", "name": "yifan" },
     { "id": "lugang", "name": "lugang" },
     { "id": "zhengzhenzhen", "name": "郑珍珍" },
-    { "id": "yuhan", "name": "yuhan" }
+    { "id": "yuhan", "name": "yuhan" },
+    { "id": "wanzhipeng", "name": "万志鹏", "role": "manager" }
   ]
 }
 
