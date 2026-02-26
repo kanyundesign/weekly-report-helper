@@ -82,23 +82,34 @@ export async function fetchTasks(assigneeName: string): Promise<{
   const sevenDaysAgo = getSevenDaysAgo()
   
   try {
-    // 分状态查询，减少单次返回量，提升响应速度
-    const statuses = ['Next Up', 'In Progress', 'Review', 'Done']
+    // 分两组并行查询：进行中的任务 + 最近完成的任务
+    const activeStatuses = ['Next Up', 'In Progress', 'Review']
     
-    const statusQueries = statuses.map(status =>
+    const [activeResponse, doneResponse] = await Promise.all([
       notion.databases.query({
         database_id: DATABASE_ID,
         filter: {
-          property: 'Status',
-          select: { equals: status },
+          or: activeStatuses.map(status => ({
+            property: 'Status',
+            select: { equals: status },
+          })),
+        },
+        page_size: 100,
+      }),
+      notion.databases.query({
+        database_id: DATABASE_ID,
+        filter: {
+          and: [
+            { property: 'Status', select: { equals: 'Done' } },
+            { timestamp: 'last_edited_time', last_edited_time: { on_or_after: sevenDaysAgo } },
+          ],
         },
         sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
-        page_size: 50,
-      })
-    )
+        page_size: 30,
+      }),
+    ])
     
-    const responses = await Promise.all(statusQueries)
-    const allResults = responses.flatMap(r => r.results)
+    const allResults = [...activeResponse.results, ...doneResponse.results]
     
     console.log(`查询到任务总数: ${allResults.length}`)
 
