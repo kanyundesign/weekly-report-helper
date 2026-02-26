@@ -82,46 +82,27 @@ export async function fetchTasks(assigneeName: string): Promise<{
   const sevenDaysAgo = getSevenDaysAgo()
   
   try {
-    // 分页查询所有相关状态的任务
-    let allResults: any[] = []
-    let hasMore = true
-    let startCursor: string | undefined = undefined
+    // 分状态查询，减少单次返回量，提升响应速度
+    const statuses = ['Next Up', 'In Progress', 'Review', 'Done']
     
-    while (hasMore) {
-    const response = await notion.databases.query({
-      database_id: DATABASE_ID,
-      filter: {
-          or: [
-            {
-              property: 'Status',
-              select: { equals: 'Next Up' },
-            },
-            {
-              property: 'Status',
-              select: { equals: 'In Progress' },
-            },
-            {
-              property: 'Status',
-              select: { equals: 'Review' },
-            },
-            {
-              property: 'Status',
-              select: { equals: 'Done' },
-            },
-          ],
+    const statusQueries = statuses.map(status =>
+      notion.databases.query({
+        database_id: DATABASE_ID,
+        filter: {
+          property: 'Status',
+          select: { equals: status },
         },
-        start_cursor: startCursor,
-        page_size: 100,
+        sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+        page_size: 50,
       })
-      
-      allResults = allResults.concat(response.results)
-      hasMore = response.has_more
-      startCursor = response.next_cursor || undefined
-    }
+    )
+    
+    const responses = await Promise.all(statusQueries)
+    const allResults = responses.flatMap(r => r.results)
     
     console.log(`查询到任务总数: ${allResults.length}`)
 
-    // 第一步：快速过滤出属于当前用户的任务（不获取子任务）
+    // 快速过滤出属于当前用户的任务
     const userPages = allResults.filter((page: any) => {
       const assigneeProp = page.properties['Assignee'] || page.properties['负责人'] || page.properties['assignee']
       
@@ -244,8 +225,14 @@ export async function fetchTasks(assigneeName: string): Promise<{
       }
     }
 
-    // 并行获取所有用户任务的内容
-    const userTasks = await Promise.all(userPages.map(fetchTaskWithContent))
+    // 分批获取用户任务的内容（每批 5 个，避免并发过多导致超时）
+    const userTasks: Task[] = []
+    const batchSize = 5
+    for (let i = 0; i < userPages.length; i += batchSize) {
+      const batch = userPages.slice(i, i + batchSize)
+      const batchResults = await Promise.all(batch.map(fetchTaskWithContent))
+      userTasks.push(...batchResults)
+    }
     
     // 分类：本周计划 (Next Up, In Progress, Review) 和 上周完成 (Done，且在时间范围内)
     const inProgress = userTasks.filter(task => 
